@@ -79,7 +79,7 @@ def call_ipsae_and_parse(ipsae_script_path, pdb_filepath, pae_filepath):
     # Construct the command with conda environment activation
     command = [
         '/bin/bash', '-c',
-        f'source activate spoc_venv && python {ipsae_script_path} "{pae_filepath}" "{pdb_filepath}" {IPSAE_PAE_CUTOFF} {IPSAE_DIST_CUTOFF}'
+        f'python {ipsae_script_path} "{pae_filepath}" "{pdb_filepath}" {IPSAE_PAE_CUTOFF} {IPSAE_DIST_CUTOFF}'
     ]
 
     try:

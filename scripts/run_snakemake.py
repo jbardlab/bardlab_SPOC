@@ -91,5 +91,5 @@ rule spoc_score_individual:
         mkdir {output}
         source activate spoc_venv && \
         cd {input} && \
-        python {params.spoc_repo}/scripts/run_custom_nobio.py {input} --rf_params {params.spoc_repo}/models/rf_afm_no_bio.joblib --output {output}/spoc_nobio_output.csv --ipsae_script {params.spoc_repo}/scripts/ipsae.py
+        python {params.spoc_repo}/scripts/run_spoc_individual_models.py {input} --rf_params {params.spoc_repo}/models/rf_afm_no_bio.joblib --output {output} --ipsae_script {params.spoc_repo}/scripts/ipsae.py
         """
