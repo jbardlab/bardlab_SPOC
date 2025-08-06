@@ -76,14 +76,10 @@ def call_ipsae_and_parse(ipsae_script_path, pdb_filepath, pae_filepath):
     dist_cutoff_str = IPSAE_DIST_CUTOFF.zfill(2)
     ipsae_output_file = f'{pdb_stem}_{pae_cutoff_str}_{dist_cutoff_str}.txt'
 
-    # Construct the command
+    # Construct the command with conda environment activation
     command = [
-        sys.executable, # Use the same python interpreter running this script
-        ipsae_script_path,
-        pae_filepath,
-        pdb_filepath,
-        IPSAE_PAE_CUTOFF,
-        IPSAE_DIST_CUTOFF
+        '/bin/bash', '-c',
+        f'source activate spoc_venv && python {ipsae_script_path} "{pae_filepath}" "{pdb_filepath}" {IPSAE_PAE_CUTOFF} {IPSAE_DIST_CUTOFF}'
     ]
 
     try:
@@ -1105,6 +1101,8 @@ def main(folder_paths:list, name_filter:str, classifier, output_name:str, ipsae_
             if model_num < 1 or model_num > 5:
                 continue
 
+            seed_num = get_seed_num(pdb_file_path)
+
             complex_name = None
 
             if '_unrelaxed_' in pdb_filename:
@@ -1112,9 +1110,12 @@ def main(folder_paths:list, name_filter:str, classifier, output_name:str, ipsae_
 
             pae_filepath = None
             for f in pae_file_paths:
-                if complex_name in f and f"model_{model_num}" in f: 
+                if complex_name in f and f"model_{model_num}" in f and f"seed_{seed_num:03d}" in f: 
                     pae_filepath = f
                     break
+
+            if pae_filepath is None:
+                continue
 
             if pae_filepath.split('.').pop() not in ['gz', 'xz', 'json']:
                 continue
