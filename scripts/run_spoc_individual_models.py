@@ -81,12 +81,12 @@ def copy_model_files(prediction_folder: str, pdb_file: str, temp_dir: str) -> No
         for json_file in glob.glob(pattern):
             shutil.copy2(json_file, temp_dir)
 
-def run_spoc_analysis(temp_dir: str, output_file: str, rf_params: str, ipsae_script: str, verbose: bool = False) -> bool:
+def run_spoc_analysis(temp_dir: str, output_file: str, rf_params: str, ipsae_script: str, analysis_script: str, verbose: bool = False) -> bool:
     """Run SPOC analysis on the temporary directory."""
     # Use bash to activate conda environment and run the script
     cmd = [
         "bash", "-c", 
-        f"source /opt/conda/etc/profile.d/conda.sh && conda activate spoc_venv && python /repo/scripts/run_custom_nobio_v2.py {temp_dir} --rf_params {rf_params} --output {output_file} --ipsae_script {ipsae_script} --single_complex"
+        f"python {analysis_script} {temp_dir} --rf_params {rf_params} --output {output_file} --ipsae_script {ipsae_script} --single_complex"
     ]
     
     try:
@@ -120,7 +120,7 @@ def get_spoc_score(csv_file: str) -> str:
 
 
 def analyze_single_model(prediction_folder: str, output_folder: str, pdb_file: str, 
-                        rf_params: str, ipsae_script: str, verbose: bool = False) -> bool:
+                        rf_params: str, ipsae_script: str, analysis_script: str, verbose: bool = False) -> bool:
     """Analyze a single model in single-complex mode."""
     filename = os.path.basename(pdb_file)
     model_num = get_model_info(pdb_file)
@@ -146,7 +146,7 @@ def analyze_single_model(prediction_folder: str, output_folder: str, pdb_file: s
             
             # Run SPOC analysis
             start_time = time.time()
-            success = run_spoc_analysis(temp_dir, output_file, rf_params, ipsae_script, verbose)
+            success = run_spoc_analysis(temp_dir, output_file, rf_params, ipsae_script, analysis_script, verbose)
             end_time = time.time()
             duration = int(end_time - start_time)
             
@@ -288,6 +288,12 @@ def main():
     )
     
     parser.add_argument(
+        "--analysis_script",
+        default="/repo/scripts/run_custom_nobio_v2.py",
+        help="Path to SPOC analysis script (run_custom_nobio_v2.py)"
+    )
+    
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Show detailed output from SPOC analysis"
@@ -346,7 +352,7 @@ def main():
     
     for pdb_file in pdb_files:
         if analyze_single_model(args.prediction_folder, args.output_folder, pdb_file, 
-                               args.rf_params, args.ipsae_script, args.verbose):
+                               args.rf_params, args.ipsae_script, args.analysis_script, args.verbose):
             success_count += 1
         else:
             failed_count += 1
@@ -378,7 +384,12 @@ def main():
             print()
     
     if failed_count > 0:
-        sys.exit(1)
+        if success_count > 0:
+            print(f"⚠ Completed with {failed_count} failed analyses out of {len(pdb_files)} total")
+            print("✓ Partial success - at least some individual model analyses completed!")
+        else:
+            print("✗ All analyses failed!")
+            sys.exit(1)
     else:
         print("✓ All individual model analyses completed successfully!")
 

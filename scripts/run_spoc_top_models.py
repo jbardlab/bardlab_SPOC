@@ -64,12 +64,12 @@ def copy_and_rename_model_files(prediction_folder: str, pdb_file: str, temp_dir:
             print(f"    → Copied and renamed JSON (fallback): {os.path.basename(json_file)} → {new_json_filename}")
 
 
-def run_spoc_analysis(temp_dir: str, output_file: str, rf_params: str, ipsae_script: str, verbose: bool = False) -> bool:
+def run_spoc_analysis(temp_dir: str, output_file: str, rf_params: str, ipsae_script: str, analysis_script: str, verbose: bool = False) -> bool:
     """Run SPOC analysis on the temporary directory."""
     # Use bash to activate conda environment and run the script
     cmd = [
         "bash", "-c", 
-        f"source /opt/conda/etc/profile.d/conda.sh && conda activate spoc_venv && python /repo/scripts/run_custom_nobio_v2.py {temp_dir} --rf_params {rf_params} --output {output_file} --ipsae_script {ipsae_script}"
+        f"python {analysis_script} {temp_dir} --rf_params {rf_params} --output {output_file} --ipsae_script {ipsae_script}"
     ]
     
     try:
@@ -121,6 +121,12 @@ def main():
         "--ipsae_script",
         default="/repo/scripts/ipsae.py",
         help="Path to IPSAE script."
+    )
+    
+    parser.add_argument(
+        "--analysis_script",
+        default="/repo/scripts/run_custom_nobio_v2.py",
+        help="Path to SPOC analysis script (run_custom_nobio_v2.py)"
     )
     
     parser.add_argument(
@@ -208,7 +214,7 @@ def main():
         
         print("\nStarting SPOC analysis on top models...")
         start_time = time.time()
-        success = run_spoc_analysis(temp_dir, output_file, args.rf_params, args.ipsae_script, args.verbose)
+        success = run_spoc_analysis(temp_dir, output_file, args.rf_params, args.ipsae_script, args.analysis_script, args.verbose)
         end_time = time.time()
         duration = int(end_time - start_time)
 

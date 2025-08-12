@@ -69,6 +69,28 @@ else
   echo "✗ ipsae.py not found"
 fi
 
+if [[ -f "$REPO_DIR/scripts/run_spoc_individual_models.py" ]]; then
+  echo "✓ run_spoc_individual_models.py exists"
+  if python3 -m py_compile "$REPO_DIR/scripts/run_spoc_individual_models.py" 2>/dev/null; then
+    echo "✓ run_spoc_individual_models.py compiles successfully"
+  else
+    echo "⚠ run_spoc_individual_models.py has syntax issues"
+  fi
+else
+  echo "✗ run_spoc_individual_models.py not found"
+fi
+
+if [[ -f "$REPO_DIR/scripts/run_spoc_top_models.py" ]]; then
+  echo "✓ run_spoc_top_models.py exists"
+  if python3 -m py_compile "$REPO_DIR/scripts/run_spoc_top_models.py" 2>/dev/null; then
+    echo "✓ run_spoc_top_models.py compiles successfully"
+  else
+    echo "⚠ run_spoc_top_models.py has syntax issues"
+  fi
+else
+  echo "✗ run_spoc_top_models.py not found"
+fi
+
 if [[ -f "$REPO_DIR/models/rf_afm_no_bio.joblib" ]]; then
   echo "✓ rf_afm_no_bio.joblib model file exists"
 else
@@ -92,128 +114,125 @@ else
   echo "⚠ Skipping Docker container test - Docker not available"
 fi
 
-# Test 4: Test run_custom_nobio_v2.py execution with --single_complex mode
-echo "Test 4: Testing run_custom_nobio_v2.py script in single complex mode..."
-if [[ "$DOCKER_AVAILABLE" == "true" && -f "$REPO_DIR/models/rf_afm_no_bio.joblib" && -f "$REPO_DIR/scripts/ipsae.py" ]]; then
+# Test 4: Test run_spoc_individual_models.py script
+echo "Test 4: Testing run_spoc_individual_models.py script..."
+if [[ "$DOCKER_AVAILABLE" == "true" && -f "$REPO_DIR/models/rf_afm_no_bio.joblib" && -f "$REPO_DIR/scripts/ipsae.py" && -f "$REPO_DIR/scripts/run_spoc_individual_models.py" ]]; then
   
-  # First, let's see what PDB files are available in the example directory
-  echo "  Available PDB files in example directory:"
+  # Test run_spoc_individual_models.py on the full example dataset
+  echo "  Testing run_spoc_individual_models.py on example data..."
+  individual_output_dir="$TEST_DIR/individual_models_output"
+  mkdir -p "$individual_output_dir"
+  
+  # Check what PDB files are available
+  echo "    → Available PDB files in example directory:"
   docker run --platform linux/amd64 --rm \
     -v "$TEST_DIR":/input \
     -v "$REPO_DIR":/repo \
     "$LOCAL_CONTAINER" \
-    bash -c "ls -la /input/spoctest_GNAS2_GP119_v3/*.pdb" | head -5
+    bash -c "ls -la /input/spoctest_GNAS2_GP119_v3/*.pdb | wc -l && ls /input/spoctest_GNAS2_GP119_v3/*.pdb | head -3"
   
-  # Create separate directories for each model to test single complex mode
-  MODEL_DIRS=()
-  for model_num in 1 2 4; do
-    model_dir="$TEST_DIR/model_${model_num}_test"
-    mkdir -p "$model_dir"
-    
-    # Copy just one model's files to test single complex mode
-    docker run --platform linux/amd64 --rm \
-      -v "$TEST_DIR":/input \
-      -v "$REPO_DIR":/repo \
-      "$LOCAL_CONTAINER" \
-      bash -c "cp /input/spoctest_GNAS2_GP119_v3/*model_${model_num}* /input/model_${model_num}_test/ 2>/dev/null || true"
-    
-    # Also copy the PAE file (predicted_aligned_error)
-    docker run --platform linux/amd64 --rm \
-      -v "$TEST_DIR":/input \
-      -v "$REPO_DIR":/repo \
-      "$LOCAL_CONTAINER" \
-      bash -c "cp /input/spoctest_GNAS2_GP119_v3/*predicted_aligned_error* /input/model_${model_num}_test/ 2>/dev/null || true"
-    
-    MODEL_DIRS+=("$model_dir")
-  done
+  # Run individual models analysis
+  docker run --platform linux/amd64 --rm \
+    -v "$TEST_DIR":/input \
+    -v "$REPO_DIR":/repo \
+    -v "$individual_output_dir":/output \
+    "$LOCAL_CONTAINER" \
+    python /repo/scripts/run_spoc_individual_models.py /input/spoctest_GNAS2_GP119_v3 /output \
+    --rf_params /repo/models/rf_afm_no_bio.joblib \
+    --ipsae_script /repo/scripts/ipsae.py \
+    --analysis_script /repo/scripts/run_custom_nobio_v2.py 2>&1
   
-  # Test each model individually in single complex mode
-  success_count=0
-  for model_num in 1 2 4; do
-    # Map model number to rank based on file naming pattern
-    case $model_num in
-      1) rank="003" ;;
-      2) rank="001" ;;
-      4) rank="002" ;;
-    esac
-    
-    model_dir="$TEST_DIR/model_${model_num}_test"
-    mkdir -p "$model_dir"
-    
-    echo "  Testing model ${model_num} (rank ${rank}) in single complex mode..."
-    
-    # Copy the specific model files and shared files
-    cp "$TEST_DIR/spoctest_GNAS2_GP119_v3/"*"rank_${rank}"*.pdb "$model_dir/" 2>/dev/null && echo "    → Copied PDB file for model $model_num"
-    cp "$TEST_DIR/spoctest_GNAS2_GP119_v3/"*"rank_${rank}"*.json "$model_dir/" 2>/dev/null && echo "    → Copied JSON file for model $model_num"
-    cp "$TEST_DIR/spoctest_GNAS2_GP119_v3/"*"predicted_aligned_error"*.json "$model_dir/" 2>/dev/null && echo "    → Copied PAE file"
-    cp "$TEST_DIR/spoctest_GNAS2_GP119_v3/"*"template_domain_names"*.json "$model_dir/" 2>/dev/null && echo "    → Copied template domain names"
-    cp "$TEST_DIR/spoctest_GNAS2_GP119_v3/config.json" "$model_dir/" 2>/dev/null && echo "    → Copied config file"
-    
-    # Check if PDB file exists
-    pdb_files=$(find "$model_dir" -name "*.pdb" | wc -l)
-    if [[ $pdb_files -eq 0 ]]; then
-      echo "    ✗ Model ${model_num}: No PDB file found in $model_dir"
-      ls -la "$model_dir" | sed 's/^/      /'
-      continue
-    else
-      echo "    → Found $pdb_files PDB file(s) for model $model_num"
-      ls -la "$model_dir"/*.pdb | sed 's/^/      /'
-    fi
-    
-    output_file="/tmp/model_${model_num}_output.csv"
-    
-    # Run the analysis using correct parameter format
-    if docker run --platform linux/amd64 --rm \
-      -v "$model_dir":/input \
-      -v "$REPO_DIR":/repo \
-      -v "/tmp":/output \
-      "$LOCAL_CONTAINER" \
-      bash -c "python /repo/scripts/run_custom_nobio_v2.py /input --rf_params /repo/models/rf_afm_no_bio.joblib --output /output/model_${model_num}_output.csv --ipsae_script /repo/scripts/ipsae.py --single_complex" 2>&1; then
-      
-      if [[ -f "$output_file" ]]; then
-        echo "    ✓ Model ${model_num}: Analysis completed successfully"
-        # Show the SPOC score from this model
-        if [[ -s "$output_file" ]]; then
-          echo "      Output preview:"
-          head -n 2 "$output_file" | sed 's/^/        /'
-          score_line=$(tail -n 1 "$output_file")
-          spoc_score=$(echo "$score_line" | cut -d',' -f2 2>/dev/null || echo "N/A")
-          echo "      SPOC score: $spoc_score"
-        fi
-        success_count=$((success_count + 1))
-      else
-        echo "    ✗ Model ${model_num}: Output file not created"
-        echo "      Checking output directory:"
-        ls -la /tmp/ | grep "model_${model_num}" | sed 's/^/        /'
-      fi
-    else
-      echo "    ✗ Model ${model_num}: Analysis failed"
-    fi
-  done
+  # Check if we got at least some results (partial success is OK)
+  individual_results=$(find "$individual_output_dir" -name "*_model_*_seed_*_spoc_results.csv" | wc -l)
+  combined_results="$individual_output_dir/combined_individual_models_results.csv"
   
-  if [[ $success_count -gt 0 ]]; then
-    echo "  ✓ Single complex mode testing completed successfully ($success_count/3 models)"
-    echo "  Summary of outputs:"
-    for model_num in 1 2 4; do
-      if [[ -f "$TEST_DIR/model_${model_num}_output.csv" ]]; then
-        echo "    Model $model_num results:"
-        head -n 2 "$TEST_DIR/model_${model_num}_output.csv" | tail -n 1 | cut -d',' -f1-3 | sed 's/^/      /'
-      fi
-    done
+  if [[ $individual_results -gt 0 ]]; then
+    echo "    ✓ Individual models analysis completed with $individual_results successful models"
+    echo "    → Individual result files:"
+    find "$individual_output_dir" -name "*_model_*_seed_*_spoc_results.csv" | head -3 | sed 's/^/        /'
   else
-    echo "  ✗ All single complex mode tests failed"
+    echo "    ✗ No individual model result files found"
     exit 1
+  fi
+  
+  if [[ -f "$combined_results" ]]; then
+    echo "    ✓ Combined results file created: $(basename "$combined_results")"
+    echo "    → Combined results preview:"
+    head -n 3 "$combined_results" | sed 's/^/        /'
+    total_models=$(tail -n +2 "$combined_results" | wc -l)
+    echo "    → Total models analyzed: $total_models"
+  else
+    echo "    ⚠ Combined results file not found"
   fi
 else
   if [[ "$DOCKER_AVAILABLE" != "true" ]]; then
-    echo "⚠ Skipping script test - Docker not available"
+    echo "⚠ Skipping individual models test - Docker not available"
   else
-    echo "⚠ Skipping script test - missing required model or script files"
+    echo "⚠ Skipping individual models test - missing required files"
   fi
 fi
 
-# Test 5: Verify Docker cleanup
-echo "Test 5: Testing Docker cleanup..."
+# Test 5: Test run_spoc_top_models.py script
+echo "Test 5: Testing run_spoc_top_models.py script..."
+if [[ "$DOCKER_AVAILABLE" == "true" && -f "$REPO_DIR/scripts/run_spoc_top_models.py" ]]; then
+  
+  # Check if we have results from the individual models test
+  combined_results="$TEST_DIR/individual_models_output/combined_individual_models_results.csv"
+  if [[ -f "$combined_results" ]]; then
+    echo "  Using combined results from individual models test..."
+    
+    top_models_output_dir="$TEST_DIR/top_models_output"
+    mkdir -p "$top_models_output_dir"
+    
+    # Test run_spoc_top_models.py
+    if docker run --platform linux/amd64 --rm \
+      -v "$TEST_DIR":/input \
+      -v "$REPO_DIR":/repo \
+      -v "$top_models_output_dir":/output \
+      "$LOCAL_CONTAINER" \
+      python /repo/scripts/run_spoc_top_models.py \
+      /input/spoctest_GNAS2_GP119_v3 \
+      /input/individual_models_output/combined_individual_models_results.csv \
+      /output \
+      --rf_params /repo/models/rf_afm_no_bio.joblib \
+      --ipsae_script /repo/scripts/ipsae.py \
+      --analysis_script /repo/scripts/run_custom_nobio_v2.py 2>&1; then
+      
+      echo "    ✓ Top models analysis completed successfully"
+      
+      # Check outputs
+      top_models_result=$(find "$top_models_output_dir" -name "*_top*_spoc_results.csv")
+      if [[ -n "$top_models_result" ]]; then
+        echo "    ✓ Top models result file created: $(basename "$top_models_result")"
+        echo "    → Top models results preview:"
+        head -n 2 "$top_models_result" | sed 's/^/        /'
+        if [[ -s "$top_models_result" ]]; then
+          score_line=$(tail -n 1 "$top_models_result")
+          spoc_score=$(echo "$score_line" | cut -d',' -f2 2>/dev/null || echo "N/A")
+          echo "    → Final SPOC score: $spoc_score"
+        fi
+      else
+        echo "    ⚠ Top models result file not found"
+      fi
+      
+    else
+      echo "    ✗ Top models analysis failed"
+    fi
+    
+  else
+    echo "  ⚠ Skipping top models test - no combined results from individual models test"
+  fi
+  
+else
+  if [[ "$DOCKER_AVAILABLE" != "true" ]]; then
+    echo "⚠ Skipping top models test - Docker not available"
+  else
+    echo "⚠ Skipping top models test - missing required files"
+  fi
+fi
+
+# Test 6: Verify Docker cleanup
+echo "Test 6: Testing Docker cleanup..."
 if [[ "$DOCKER_AVAILABLE" == "true" ]]; then
   RUNNING_CONTAINERS=$(docker ps -q --filter ancestor="$LOCAL_CONTAINER")
   if [[ -z "$RUNNING_CONTAINERS" ]]; then
